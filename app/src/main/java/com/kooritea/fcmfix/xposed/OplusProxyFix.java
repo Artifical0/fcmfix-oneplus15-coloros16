@@ -1,118 +1,182 @@
 package com.kooritea.fcmfix.xposed;
 
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.WorkSource;
 
-import com.kooritea.fcmfix.util.XposedUtils;
-
 import com.kooritea.fcmfix.libxposed.XC_MethodHook;
-import com.kooritea.fcmfix.libxposed.XC_MethodReplacement;
+import com.kooritea.fcmfix.libxposed.XposedBridge;
 import com.kooritea.fcmfix.libxposed.XposedHelpers;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 public class OplusProxyFix extends XposedModule {
 
-    private static Object s_oplusProxyWakeLock = null;
-    private static volatile boolean s_useFourParams = false;
-    private static volatile boolean s_signatureDetected = false;
+    private static final String[] PROXY_BROADCAST_CLASSES = new String[]{
+            "com.android.server.am.OplusProxyBroadcast",
+            "com.android.server.am.OplusBroadcastProxy",
+            "com.oplus.server.am.OplusProxyBroadcast"
+    };
+
+    private static final String[] PROXY_WAKELOCK_CLASSES = new String[]{
+            "com.android.server.power.OplusProxyWakeLock",
+            "com.android.server.power.oplus.OplusProxyWakeLock",
+            "com.oplus.server.power.OplusProxyWakeLock"
+    };
+
+    private static volatile Object sOplusProxyWakeLock;
+    private static volatile Method sUnfreezeMethod;
 
     public OplusProxyFix(ClassLoader classLoader) {
         super(classLoader);
-        try{
-            this.startHookOplusProxyWakeLock();
-            this.startHookOplusProxyBroadcast();
-        }catch(Throwable e) {
-            printLog("hook error OplusProxy:" + e.getMessage());
-        }
-        try {
-            this.startHookRegisterGmsRestrictObserver(); // 阻止Hans监听GMS状态更新
-        } catch (Throwable e) {
-            printLog("hook error registerGmsRestrictObserver:" + e.getMessage());
-        }
-        try {
-            this.startHookUpdateGmsRestrict(); // 拦截Hans更新GMS限制状态
-        } catch (Throwable e) {
-            printLog("hook error updateGmsRestrict:" + e.getMessage());
-        }
-        try {
-            this.startHookIsGoogleRestricInfoOn(); // 阻止判断GMS限制
-        } catch (Throwable e) {
-            printLog("hook error isGoogleRestricInfoOn:" + e.getMessage());
-        }
-        /*
-        try {
-            this.startHookIsGmsApp(); // 阻止Hans对GMS进行特殊处理
-        } catch (Throwable e) {
-            printLog("hook error isGmsApp:" + e.getMessage());
-        }
-        */
+        runHook("OplusProxyWakeLock", this::startHookOplusProxyWakeLock);
+        runHook("OplusProxyBroadcast", this::startHookOplusProxyBroadcast);
+        runHook("registerGmsRestrictObserver", this::startHookRegisterGmsRestrictObserver);
+        runHook("updateGmsRestrict", this::startHookUpdateGmsRestrict);
+        runHook("isGoogleRestricInfoOn", this::startHookIsGoogleRestricInfoOn);
     }
 
-    private void startHookOplusProxyBroadcast() throws Exception {
-        Class<?> oplusProxyBroadcastClass = XposedHelpers.findClass("com.android.server.am.OplusProxyBroadcast", classLoader);
-        Class<?> resultEnum = XposedHelpers.findClass("com.android.server.am.OplusProxyBroadcast$RESULT", classLoader);
-        Object notIncludeValue = XposedHelpers.getStaticObjectField(resultEnum, "NOT_INCLUDE");
-        Object proxyValue = XposedHelpers.getStaticObjectField(resultEnum, "PROXY");
-
-        /*
-        XXX only tested on OnePlus13T ColorOS 15
-        private RESULT shouldProxy( 8 args
-            00 Intent intent,
-            01 int callingPid,
-            02 int callingUid,
-            03 String callingPkg,
-            04 int uid,
-            05 String pkgName,
-            06 String action,
-            07 int appType) {
-         */
-
-        XposedUtils.findAndHookMethod(oplusProxyBroadcastClass, "shouldProxy", 8, new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                String callingPkg = (String)param.args[3];
-                String pkgName = (String)param.args[5];
-                String action = (String)param.args[6];
-                // positive sample: caller=com.google.android.gms, action=com.google.android.c2dm.intent.RECEIVE
-                if (isFCMAction(action) && targetIsAllow(pkgName)) {
-                    printLog("shouldProxy: bypass pkg="+pkgName+", caller="+callingPkg+", action="+action);
-                    param.setResult(notIncludeValue);
-                }
-            }
-        });
+    private interface HookAction {
+        void run() throws Throwable;
     }
 
-    private void startHookOplusProxyWakeLock() throws Exception {
-        Class<?> oplusWakelockClass = XposedHelpers.findClass("com.android.server.power.OplusProxyWakeLock", classLoader);
+    private void runHook(String name, HookAction action) {
+        try {
+            action.run();
+        } catch (Throwable e) {
+            printLog("hook error " + name + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
 
-        XposedUtils.findAndHookConstructorAnyParam(oplusWakelockClass, new XC_MethodHook() {
-            @Override
-            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                if (s_oplusProxyWakeLock != null) {
-                    printLog("warn: OplusProxyWakeLock constructed multiple times!");
-                    return;
-                }
-                s_oplusProxyWakeLock = param.thisObject;
+    private void startHookOplusProxyBroadcast() {
+        int hookCount = 0;
+        for (String className : PROXY_BROADCAST_CLASSES) {
+            Class<?> proxyClass = XposedHelpers.findClassIfExists(className, classLoader);
+            if (proxyClass == null) {
+                continue;
             }
-        });
+
+            for (Method method : proxyClass.getDeclaredMethods()) {
+                if (!"shouldProxy".equals(method.getName())) {
+                    continue;
+                }
+                Object noProxyResult = getNoProxyResult(method.getReturnType());
+                if (noProxyResult == UnsupportedResult.VALUE) {
+                    printLog("unsupported shouldProxy candidate: " + describeMethod(method));
+                    continue;
+                }
+
+                final Object finalNoProxyResult = noProxyResult;
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        Intent intent = findIntentArgument(param.args);
+                        if (intent == null || !isFCMAction(intent.getAction())) {
+                            return;
+                        }
+
+                        String target = getIntentTarget(intent);
+                        if (target == null) {
+                            target = findAllowedPackageArgument(param.args);
+                        }
+                        if (target != null && targetIsAllow(target)) {
+                            printLog("Oplus shouldProxy bypass: pkg=" + target
+                                    + ", action=" + intent.getAction(), true);
+                            param.setResult(finalNoProxyResult);
+                        }
+                    }
+                });
+                hookCount++;
+                printLog("Oplus shouldProxy hook active: " + describeMethod(method));
+            }
+        }
+        if (hookCount == 0) {
+            throw new NoSuchMethodError("No compatible Oplus shouldProxy method");
+        }
+    }
+
+    private void startHookOplusProxyWakeLock() {
+        Class<?> wakeLockClass = null;
+        for (String className : PROXY_WAKELOCK_CLASSES) {
+            wakeLockClass = XposedHelpers.findClassIfExists(className, classLoader);
+            if (wakeLockClass != null) {
+                break;
+            }
+        }
+        if (wakeLockClass == null) {
+            throw new NoClassDefFoundError("OplusProxyWakeLock");
+        }
+
+        sUnfreezeMethod = findBestUnfreezeMethod(wakeLockClass);
+        if (sUnfreezeMethod == null) {
+            throw new NoSuchMethodError(wakeLockClass.getName() + "#unfreezeIfNeed");
+        }
+        sUnfreezeMethod.setAccessible(true);
+        printLog("Oplus unfreeze method selected: " + describeMethod(sUnfreezeMethod));
+
+        if (Modifier.isStatic(sUnfreezeMethod.getModifiers())) {
+            return;
+        }
+
+        int constructorHooks = 0;
+        for (Constructor<?> constructor : wakeLockClass.getDeclaredConstructors()) {
+            constructor.setAccessible(true);
+            XposedBridge.hookMethod(constructor, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    sOplusProxyWakeLock = param.thisObject;
+                    printLog("OplusProxyWakeLock instance captured");
+                }
+            });
+            constructorHooks++;
+        }
+        if (constructorHooks == 0) {
+            throw new NoSuchMethodError(wakeLockClass.getName() + "#<init>");
+        }
+    }
+
+    private Method findBestUnfreezeMethod(Class<?> clazz) {
+        Method best = null;
+        int bestScore = -1;
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (!"unfreezeIfNeed".equals(method.getName())) {
+                continue;
+            }
+            int score = 0;
+            for (Class<?> type : method.getParameterTypes()) {
+                if (type == int.class || type == Integer.class) score += 4;
+                if (WorkSource.class.isAssignableFrom(type)) score += 3;
+                if (type == String.class) score += 1;
+            }
+            if (score > bestScore) {
+                best = method;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     private static int getTargetUidFromPackageName(String packageName) {
-        // Convert package name to UID
-        if (packageName != null) {
+        if (packageName != null && context != null) {
             try {
-                PackageManager pm = context.getPackageManager();
-                return pm.getPackageUid(packageName, 0);
+                return context.getPackageManager().getPackageUid(packageName, 0);
             } catch (PackageManager.NameNotFoundException e) {
                 printLog("error: Package not found: " + packageName);
             }
         }
-
-        // Default to an invalid UID if we couldn't determine the target
         return -1;
     }
 
     public static void unfreeze(String target) {
-        if (s_oplusProxyWakeLock == null) {
+        Method method = sUnfreezeMethod;
+        if (method == null) {
+            return;
+        }
+        Object receiver = Modifier.isStatic(method.getModifiers()) ? null : sOplusProxyWakeLock;
+        if (!Modifier.isStatic(method.getModifiers()) && receiver == null) {
             return;
         }
 
@@ -121,57 +185,162 @@ public class OplusProxyFix extends XposedModule {
             return;
         }
 
-        /*
-        XXX only tested on OnePlus13T ColorOS 15
-        unfreezeIfNeed: 3 args
-            00 int uid,
-            01 WorkSource ws,
-            02 String tag
-         */
+        Object[] args = createUnfreezeArguments(method.getParameterTypes(), uid);
+        if (args == null) {
+            printLog("unsupported Oplus unfreeze arguments: " + describeMethod(method));
+            return;
+        }
 
-        WorkSource ws = new WorkSource();
-        String tag = "FCMXX";
-
-        if (!s_signatureDetected) {
-            try {
-                XposedHelpers.callMethod(s_oplusProxyWakeLock, "unfreezeIfNeed", uid, ws, tag, "FCMFix");
-                s_useFourParams = true;
-            } catch (Throwable e) {
-                // 降级用3参
-                XposedHelpers.callMethod(s_oplusProxyWakeLock, "unfreezeIfNeed", uid, ws, tag);
-                s_useFourParams = false;
-            }
-            s_signatureDetected = true;
-        } else {
-            // 后续调用直接用缓存的
-            try {
-                if (s_useFourParams) {
-                    XposedHelpers.callMethod(s_oplusProxyWakeLock, "unfreezeIfNeed", uid, ws, tag, "FCMFix");
-                    printLog("unfreeze " + target + ", uid=" + uid);
-                } else {
-                    XposedHelpers.callMethod(s_oplusProxyWakeLock, "unfreezeIfNeed", uid, ws, tag);
-                    printLog("unfreeze " + target + ", uid=" + uid);
-                }
-            } catch (Throwable ignored) {
-                // 静默或log
-            }
+        try {
+            method.invoke(receiver, args);
+            printLog("unfreeze " + target + ", uid=" + uid, true);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            printLog("Oplus unfreeze invocation failed: " + cause.getClass().getSimpleName()
+                    + ": " + cause.getMessage(), true);
+        } catch (Throwable e) {
+            printLog("Oplus unfreeze invocation failed: " + e.getClass().getSimpleName()
+                    + ": " + e.getMessage(), true);
         }
     }
 
+    private static Object[] createUnfreezeArguments(Class<?>[] types, int uid) {
+        Object[] args = new Object[types.length];
+        boolean uidAssigned = false;
+        for (int i = 0; i < types.length; i++) {
+            Class<?> type = types[i];
+            if (type == int.class || type == Integer.class) {
+                args[i] = uidAssigned ? 0 : uid;
+                uidAssigned = true;
+            } else if (WorkSource.class.isAssignableFrom(type)) {
+                args[i] = new WorkSource();
+            } else if (type == String.class || CharSequence.class.isAssignableFrom(type)) {
+                args[i] = "FCMFix";
+            } else if (type == boolean.class || type == Boolean.class) {
+                args[i] = false;
+            } else if (type == long.class || type == Long.class) {
+                args[i] = 0L;
+            } else if (type == float.class || type == Float.class) {
+                args[i] = 0F;
+            } else if (type == double.class || type == Double.class) {
+                args[i] = 0D;
+            } else if (!type.isPrimitive()) {
+                args[i] = null;
+            } else {
+                return null;
+            }
+        }
+        return uidAssigned ? args : null;
+    }
+
     private void startHookRegisterGmsRestrictObserver() {
-        XposedHelpers.findAndHookMethod("com.android.server.hans.scene.OplusBgSceneManager", classLoader, "registerGmsRestrictObserver", XC_MethodReplacement.DO_NOTHING);
+        int hooks = hookAllMethods("com.android.server.hans.scene.OplusBgSceneManager",
+                "registerGmsRestrictObserver", null);
+        if (hooks == 0) throw new NoSuchMethodError("registerGmsRestrictObserver");
     }
 
     private void startHookUpdateGmsRestrict() {
-        XposedHelpers.findAndHookMethod("com.android.server.hans.scene.OplusBgSceneManager", classLoader, "updateGmsRestrict", XC_MethodReplacement.DO_NOTHING);
+        int hooks = hookAllMethods("com.android.server.hans.scene.OplusBgSceneManager",
+                "updateGmsRestrict", null);
+        if (hooks == 0) throw new NoSuchMethodError("updateGmsRestrict");
     }
 
     private void startHookIsGoogleRestricInfoOn() {
-        XposedHelpers.findAndHookMethod("com.android.server.am.OplusAppStartupManager$OplusStartupStrategy", classLoader, "isGoogleRestricInfoOn", int.class, XC_MethodReplacement.returnConstant(false));
+        int hooks = hookAllMethods("com.android.server.am.OplusAppStartupManager$OplusStartupStrategy",
+                "isGoogleRestricInfoOn", Boolean.FALSE);
+        if (hooks == 0) throw new NoSuchMethodError("isGoogleRestricInfoOn");
     }
 
-    private void startHookIsGmsApp() {
-        XposedHelpers.findAndHookMethod("com.android.server.hans.OplusHansDBConfig", classLoader, "isGmsApp", int.class, XC_MethodReplacement.returnConstant(false));
+    private int hookAllMethods(String className, String methodName, Object result) {
+        Class<?> clazz = XposedHelpers.findClassIfExists(className, classLoader);
+        if (clazz == null) return 0;
+        int hooks = 0;
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (!methodName.equals(method.getName())) continue;
+            if (result == null && method.getReturnType() != void.class) {
+                continue;
+            }
+            if (result == Boolean.FALSE && method.getReturnType() != boolean.class
+                    && method.getReturnType() != Boolean.class) {
+                continue;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    param.setResult(result);
+                }
+            });
+            hooks++;
+            printLog("Oplus restriction hook active: " + describeMethod(method));
+        }
+        return hooks;
     }
 
+    private String getIntentTarget(Intent intent) {
+        if (intent.getComponent() != null) {
+            return intent.getComponent().getPackageName();
+        }
+        return intent.getPackage();
+    }
+
+    private String findAllowedPackageArgument(Object[] args) {
+        for (Object arg : args) {
+            if (arg instanceof String && targetIsAllow((String) arg)) {
+                return (String) arg;
+            }
+        }
+        return null;
+    }
+
+    private Intent findIntentArgument(Object[] args) {
+        for (Object arg : args) {
+            if (arg instanceof Intent) {
+                return (Intent) arg;
+            }
+        }
+        for (Object arg : args) {
+            if (arg == null) continue;
+            try {
+                Object nestedIntent = XposedHelpers.getObjectField(arg, "intent");
+                if (nestedIntent instanceof Intent) {
+                    return (Intent) nestedIntent;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private Object getNoProxyResult(Class<?> returnType) {
+        if (returnType == boolean.class || returnType == Boolean.class) {
+            return Boolean.FALSE;
+        }
+        if (returnType.isEnum()) {
+            Object[] constants = returnType.getEnumConstants();
+            if (constants != null) {
+                String[] preferred = new String[]{"NOT_INCLUDE", "NOT_PROXY", "ALLOW", "PASS"};
+                for (String name : preferred) {
+                    for (Object constant : constants) {
+                        if (name.equals(((Enum<?>) constant).name())) {
+                            return constant;
+                        }
+                    }
+                }
+            }
+        }
+        return UnsupportedResult.VALUE;
+    }
+
+    private enum UnsupportedResult { VALUE }
+
+    private static String describeMethod(Method method) {
+        StringBuilder result = new StringBuilder(method.getDeclaringClass().getName())
+                .append('#').append(method.getName()).append('(');
+        Class<?>[] types = method.getParameterTypes();
+        for (int i = 0; i < types.length; i++) {
+            if (i > 0) result.append(',');
+            result.append(types[i].getSimpleName());
+        }
+        return result.append("): ").append(method.getReturnType().getSimpleName()).toString();
+    }
 }

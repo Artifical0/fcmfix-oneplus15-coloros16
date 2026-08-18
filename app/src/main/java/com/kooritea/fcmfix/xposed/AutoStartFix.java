@@ -160,22 +160,88 @@ public class AutoStartFix extends XposedModule {
         }
 
         try{
-            // oos15/cos15
-            Method method = XposedUtils.findMethod(XposedHelpers.findClass("com.android.server.am.OplusAppStartupManager",classLoader),"shouldPreventSendReceiverReal",4);
-            XposedBridge.hookMethod(method,new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam methodHookParam) {
-                    if(methodHookParam.args[0] != null && XposedHelpers.getObjectField(methodHookParam.args[0],"intent") != null){
-                        Intent intent = (Intent)XposedHelpers.getObjectField(methodHookParam.args[0],"intent");
-                        if(isFCMIntent(intent) && targetIsAllow(intent.getPackage())){
+            // OOS/COS 15/16: ColorOS updates have changed the parameter count.
+            // Hook every boolean overload and discover the Intent at runtime.
+            Class<?> startupManager = XposedHelpers.findClass(
+                    "com.android.server.am.OplusAppStartupManager", classLoader);
+            int hookCount = 0;
+            String[] methodNames = new String[]{
+                    "shouldPreventSendReceiverReal",
+                    "shouldPreventSendReceiver"
+            };
+            for (Method method : startupManager.getDeclaredMethods()) {
+                if (!contains(methodNames, method.getName())) {
+                    continue;
+                }
+                if (method.getReturnType() != boolean.class
+                        && method.getReturnType() != Boolean.class) {
+                    continue;
+                }
+                XposedBridge.hookMethod(method,new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam methodHookParam) {
+                        Intent intent = findIntentArgument(methodHookParam.args);
+                        if (intent == null || !isFCMIntent(intent)) {
+                            return;
+                        }
+                        String target = intent.getComponent() == null
+                                ? intent.getPackage()
+                                : intent.getComponent().getPackageName();
+                        if (target == null) {
+                            target = findAllowedPackageArgument(methodHookParam.args);
+                        }
+                        if (target != null && targetIsAllow(target)) {
+                            printLog("Oplus auto-start bypass: pkg=" + target
+                                    + ", method=" + method.getName(), true);
                             methodHookParam.setResult(false);
                         }
                     }
-                }
-            });
+                });
+                hookCount++;
+                printLog("Oplus auto-start hook active: " + method.getName()
+                        + "/" + method.getParameterCount());
+            }
+            if (hookCount == 0) {
+                throw new NoSuchMethodError();
+            }
         } catch (XposedHelpers.ClassNotFoundError | NoSuchMethodError  e) {
-            printLog("No Such Method com.android.server.am.OplusAppStartupManager.shouldPreventSendReceiverReal");
+            printLog("No compatible OplusAppStartupManager receiver restriction method");
         }
+    }
+
+    private boolean contains(String[] values, String wanted) {
+        for (String value : values) {
+            if (value.equals(wanted)) return true;
+        }
+        return false;
+    }
+
+    private Intent findIntentArgument(Object[] args) {
+        for (Object arg : args) {
+            if (arg instanceof Intent) {
+                return (Intent) arg;
+            }
+        }
+        for (Object arg : args) {
+            if (arg == null) continue;
+            try {
+                Object nestedIntent = XposedHelpers.getObjectField(arg, "intent");
+                if (nestedIntent instanceof Intent) {
+                    return (Intent) nestedIntent;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private String findAllowedPackageArgument(Object[] args) {
+        for (Object arg : args) {
+            if (arg instanceof String && targetIsAllow((String) arg)) {
+                return (String) arg;
+            }
+        }
+        return null;
     }
 
     protected void startHookRemovePowerPolicy(){

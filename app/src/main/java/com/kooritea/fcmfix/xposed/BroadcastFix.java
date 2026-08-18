@@ -14,6 +14,8 @@ import androidx.core.app.NotificationManagerCompat;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.HashSet;
+import java.util.Set;
 import com.kooritea.fcmfix.libxposed.XC_MethodHook;
 import com.kooritea.fcmfix.libxposed.XposedBridge;
 import com.kooritea.fcmfix.libxposed.XposedHelpers;
@@ -26,6 +28,11 @@ public class BroadcastFix extends XposedModule {
     public BroadcastFix(ClassLoader classLoader) {
         super(classLoader);
         try{
+            this.startHookBroadcastEntryPoints();
+        }catch (Throwable e) {
+            printLog("hook error broadcast entry point:" + e.getMessage());
+        }
+        try{
             this.startHookBroadcastIntentLocked();
         }catch (Throwable e) {
             printLog("hook error broadcastIntentLocked:" + e.getMessage());
@@ -37,94 +44,160 @@ public class BroadcastFix extends XposedModule {
 //        }
     }
 
+    /**
+     * Android 16 / ColorOS 16 validates and may clone the incoming Intent
+     * before entering broadcastIntentLocked. Hook the Binder-facing entry so
+     * FLAG_INCLUDE_STOPPED_PACKAGES survives that copy.
+     */
+    protected void startHookBroadcastEntryPoints(){
+        String[] candidateClasses = new String[]{
+                "com.android.server.am.ActivityManagerService",
+                "com.android.server.am.BroadcastController"
+        };
+        Set<String> hookedSignatures = new HashSet<>();
+        int hookCount = 0;
+
+        for (String className : candidateClasses) {
+            Class<?> clazz = XposedHelpers.findClassIfExists(className, classLoader);
+            if (clazz == null) {
+                continue;
+            }
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (!"broadcastIntentWithFeature".equals(method.getName())) {
+                    continue;
+                }
+                int intentArgsIndex = findIntentParameterIndex(method);
+                if (intentArgsIndex < 0) {
+                    continue;
+                }
+                String signature = describeMethod(method);
+                if (!hookedSignatures.add(signature)) {
+                    continue;
+                }
+                try {
+                    createBroadcastIntentHooker(intentArgsIndex, -1, method, "entry");
+                    hookCount++;
+                } catch (Throwable e) {
+                    printLog("hook broadcast entry failed: " + signature + ": " + e.getMessage());
+                }
+            }
+        }
+        printLog("ColorOS 16 broadcast entry hooks active: " + hookCount);
+    }
+
     protected void startHookBroadcastIntentLocked(){
-        Method targetMethod = null;
-        int intent_args_index = 0;
-        int appOp_args_index = 0;
-        if(Build.VERSION.SDK_INT >= 35){
-            targetMethod = XposedUtils.tryFindMethodMostParam(classLoader,"com.android.server.am.BroadcastController","broadcastIntentLocked");
-            if(targetMethod != null){
-                if(Build.VERSION.SDK_INT >= 35){
-                    intent_args_index = 3;
-                    appOp_args_index = 13;
+        String[] candidateClasses = new String[]{
+                "com.android.server.am.BroadcastController",
+                "com.android.server.am.ActivityManagerService"
+        };
+        Set<String> hookedSignatures = new HashSet<>();
+        int hookCount = 0;
+
+        for (String className : candidateClasses) {
+            Class<?> clazz = XposedHelpers.findClassIfExists(className, classLoader);
+            if (clazz == null) {
+                printLog("broadcast hook class missing: " + className);
+                continue;
+            }
+
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (!"broadcastIntentLocked".equals(method.getName())) {
+                    continue;
+                }
+                int intentArgsIndex = findIntentParameterIndex(method);
+                if (intentArgsIndex < 0) {
+                    printLog("skip broadcast candidate without Intent: " + describeMethod(method));
+                    continue;
+                }
+
+                String signature = describeMethod(method);
+                if (!hookedSignatures.add(signature)) {
+                    continue;
+                }
+
+                int appOpArgsIndex = findAppOpParameterIndex(method);
+                try {
+                    createBroadcastIntentHooker(intentArgsIndex, appOpArgsIndex, method, "locked");
+                    hookCount++;
+                } catch (Throwable e) {
+                    printLog("hook broadcast candidate failed: " + signature + ": " + e.getMessage());
                 }
             }
         }
-        if(targetMethod == null){
-            targetMethod = XposedUtils.tryFindMethodMostParam(classLoader,"com.android.server.am.ActivityManagerService","broadcastIntentLocked");
-            if(targetMethod != null){
-                Parameter[] parameters = targetMethod.getParameters();
-                if(Build.VERSION.SDK_INT == Build.VERSION_CODES.Q){
-                    intent_args_index = 2;
-                    appOp_args_index = 9;
-                }else if(Build.VERSION.SDK_INT == Build.VERSION_CODES.R){
-                    intent_args_index = 3;
-                    appOp_args_index = 10;
-                }else if(Build.VERSION.SDK_INT == 31){
-                    intent_args_index = 3;
-                    if(parameters[11].getType() == int.class){
-                        appOp_args_index = 11;
-                    }
-                    if(parameters[12].getType() == int.class){
-                        appOp_args_index = 12;
-                    }
-                }else if(Build.VERSION.SDK_INT == 32){
-                    intent_args_index = 3;
-                    if(parameters[11].getType() == int.class){
-                        appOp_args_index = 11;
-                    }
-                    if(parameters[12].getType() == int.class){
-                        appOp_args_index = 12;
-                    }
-                }else if(Build.VERSION.SDK_INT == 33){
-                    intent_args_index = 3;
-                    appOp_args_index = 12;
-                } else if(Build.VERSION.SDK_INT == 34){
-                    intent_args_index = 3;
-                    if(parameters[12].getType() == int.class){
-                        appOp_args_index = 12;
-                    }
-                    if(parameters[13].getType() == int.class){
-                        appOp_args_index = 13;
-                    }
-                } else if(Build.VERSION.SDK_INT >= 35){
-                    intent_args_index = 3;
-                    if(parameters[12].getType() == int.class){
-                        appOp_args_index = 12;
-                    }
-                    if(parameters[13].getType() == int.class){
-                        appOp_args_index = 13;
-                    }
-                }
-                if(intent_args_index == 0 || appOp_args_index == 0){
-                    intent_args_index = 0;
-                    appOp_args_index = 0;
-                    // 根据参数名称查找，部分经过混淆的系统无效
-                    for(int i = 0; i < parameters.length; i++){
-                        if("appOp".equals(parameters[i].getName()) && parameters[i].getType() == int.class){
-                            appOp_args_index = i;
-                        }
-                        if("intent".equals(parameters[i].getName()) && parameters[i].getType() == Intent.class){
-                            intent_args_index = i;
-                        }
-                    }
-                }
-            }
-        }
-        if(targetMethod != null && intent_args_index != 0 & appOp_args_index != 0 && targetMethod.getParameters()[intent_args_index].getType() == Intent.class && targetMethod.getParameters()[appOp_args_index].getType() == int.class){
-            createBroadcastIntentLockedHooker(intent_args_index,appOp_args_index,targetMethod);
-        } else {
+
+        if (hookCount == 0) {
             printLog("broadcastIntentLocked hook 位置查找失败，fcmfix将不会工作。");
+        } else {
+            printLog("broadcastIntentLocked hooks active: " + hookCount);
         }
     }
 
+    private int findIntentParameterIndex(Method method) {
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (Intent.class.isAssignableFrom(parameterTypes[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findAppOpParameterIndex(Method method) {
+        Parameter[] parameters = method.getParameters();
+        for (int i = 0; i < parameters.length; i++) {
+            if (parameters[i].getType() == int.class && "appOp".equals(parameters[i].getName())) {
+                return i;
+            }
+        }
+
+        // Release framework builds often strip parameter names. Keep known AOSP
+        // locations only as an optional enhancement; adding the stopped-package
+        // flag does not depend on finding appOp.
+        int[] candidates;
+        if (Build.VERSION.SDK_INT >= 35) {
+            candidates = new int[]{13, 12};
+        } else if (Build.VERSION.SDK_INT == 34) {
+            candidates = new int[]{13, 12};
+        } else if (Build.VERSION.SDK_INT == 33) {
+            candidates = new int[]{12};
+        } else if (Build.VERSION.SDK_INT >= 31) {
+            candidates = new int[]{12, 11};
+        } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            candidates = new int[]{10};
+        } else {
+            candidates = new int[]{9};
+        }
+        for (int candidate : candidates) {
+            if (candidate < parameters.length && parameters[candidate].getType() == int.class) {
+                return candidate;
+            }
+        }
+        return -1;
+    }
+
+    private String describeMethod(Method method) {
+        StringBuilder result = new StringBuilder(method.getDeclaringClass().getName())
+                .append('#').append(method.getName()).append('(');
+        Class<?>[] types = method.getParameterTypes();
+        for (int i = 0; i < types.length; i++) {
+            if (i > 0) result.append(',');
+            result.append(types[i].getSimpleName());
+        }
+        return result.append(')').toString();
+    }
+
     protected void createBroadcastIntentLockedHooker(int intent_args_index, int appOp_args_index, Method method){
+        createBroadcastIntentHooker(intent_args_index, appOp_args_index, method, "locked");
+    }
+
+    protected void createBroadcastIntentHooker(int intent_args_index, int appOp_args_index, Method method, String stage){
         printLog("Android API: " + Build.VERSION.SDK_INT);
         printLog("appOp_args_index: " + appOp_args_index);
         printLog("intent_args_index: " + intent_args_index);
-        printLog("hook target: " + method.getDeclaringClass().getName());
+        printLog("hook target [" + stage + "]: " + describeMethod(method));
         final int finalIntent_args_index = intent_args_index;
         final int finalAppOp_args_index = appOp_args_index;
+        final String finalStage = stage;
 
         XposedBridge.hookMethod(method,new XC_MethodHook() {
             @Override
@@ -144,10 +217,18 @@ public class BroadcastFix extends XposedModule {
                     } else {
                         target = intent.getPackage();
                     }
-                    if(targetIsAllow(target)){
-                        int i = (Integer) methodHookParam.args[finalAppOp_args_index];
-                        if (i == -1) {
-                            methodHookParam.args[finalAppOp_args_index] = 11;
+                    boolean targetAllowed = targetIsAllow(target);
+                    if ("entry".equals(finalStage)) {
+                        printLog("ColorOS16 FCM entry: target=" + target
+                                + ", flags=0x" + Integer.toHexString(intent.getFlags())
+                                + ", allowed=" + targetAllowed, true);
+                    }
+                    if(targetAllowed){
+                        if (finalAppOp_args_index >= 0 && finalAppOp_args_index < methodHookParam.args.length) {
+                            int i = (Integer) methodHookParam.args[finalAppOp_args_index];
+                            if (i == -1) {
+                                methodHookParam.args[finalAppOp_args_index] = 11;
+                            }
                         }
                         intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
                         if (getBooleanConfig("includeIceBoxDisableApp",false) && !IceboxUtils.isAppEnabled(context, target)) {
@@ -168,7 +249,7 @@ public class BroadcastFix extends XposedModule {
                                 }
                                 try {
                                     if(IceboxUtils.isAppEnabled(context, target)){
-                                        printLog("Send Forced Start Broadcast: " + target, true);
+                                        printLog("Send Forced Start Broadcast [" + finalStage + "]: " + target, true);
                                     }else{
                                         printLog("Waiting for IceBox to activate the app timed out: " + target, true);
                                     }
@@ -178,7 +259,7 @@ public class BroadcastFix extends XposedModule {
                                 }
                             }).start();
                         }else{
-                            printLog("Send Forced Start Broadcast: " + target, true);
+                            printLog("Send Forced Start Broadcast [" + finalStage + "]: " + target, true);
                         }
                         // cos15 unfreeze
                         OplusProxyFix.unfreeze(target);

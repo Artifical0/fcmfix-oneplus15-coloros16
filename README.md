@@ -1,8 +1,23 @@
-# fcmfix(Android 10-15 )
+# fcmfix (Android 10-16)
 
 [![Android CI](https://github.com/kooritea/fcmfix/workflows/Android%20CI/badge.svg)](https://github.com/kooritea/fcmfix/actions)
 
 让fcm/gcm唤醒未启动的应用进行发送通知  
+
+### 一加 15 / ColorOS 16 适配
+
+本仓库包含针对一加 15（Android 16 / ColorOS 16）的实机适配：
+
+- 在 `ActivityManagerService.broadcastIntentWithFeature` 前置入口补充
+  `FLAG_INCLUDE_STOPPED_PACKAGES`，避免 ColorOS 16 在后续广播处理前复制或过滤 Intent，
+  导致原有 `broadcastIntentLocked` 钩子无法唤醒已停止应用。
+- 动态匹配 Android 16 广播方法参数，以及 ColorOS 的 OPlus 代理、自启动限制和解冻方法，
+  减少 ROM 小版本变动造成的固定签名失效。
+- 测试包使用独立包名 `com.kooritea.fcmfix.op15`，可以和官方 FCMFix 并存；
+  在 LSPosed 中只启用一个版本，作用域选择 `system`。
+
+已在一加 15 ColorOS `16.0.10.500` 上验证：Nekogram
+`tw.nekomimi.nekogram` 处于 `stopped=true` 且无进程时，FCM 可以启动应用并生成通知。
 
 ### 附加功能
 
