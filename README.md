@@ -8,13 +8,21 @@
 
 本仓库包含针对一加 15（Android 16 / ColorOS 16）的实机适配：
 
+完整的国行/国际版固件差分、限制调用链和 Hook 映射见
+[OnePlus 15 ColorOS 16 FCM 限制分析](docs/oneplus15-coloros16-fcm-analysis.md)。
+
 - 在 `ActivityManagerService.broadcastIntentWithFeature` 前置入口补充
   `FLAG_INCLUDE_STOPPED_PACKAGES`，避免 ColorOS 16 在后续广播处理前复制或过滤 Intent，
   导致原有 `broadcastIntentLocked` 钩子无法唤醒已停止应用。
 - 动态匹配 Android 16 广播方法参数，以及 ColorOS 的 OPlus 代理、自启动限制和解冻方法，
   减少 ROM 小版本变动造成的固定签名失效。
+- 针对国行区域策略，按 FCMFix 允许列表绕过应用分类、GCM bind 和 FCM service 启动限制；
+  仅为 GMS/GSF/Play 恢复 Doze 条目和 Hans 组件放行，不改写整份 ColorOS 配置。
+- 阻止 ColorOS 电池组件在 Google 连通性检测失败时对 GMS 等核心包写入
+  `POLICY_REJECT_ALL`，但不干预用户通过系统联网管理手动设置的规则。
 - 测试包使用独立包名 `com.kooritea.fcmfix.op15`，可以和官方 FCMFix 并存；
-  在 LSPosed 中只启用一个版本，作用域选择 `system`。
+  在 LSPosed 中只启用一个版本，作用域选择 `系统框架` 和 `电池`（包名
+  `com.oplus.battery`）。
 
 已在一加 15 ColorOS `16.0.10.500` 上验证：Nekogram
 `tw.nekomimi.nekogram` 处于 `stopped=true` 且无进程时，FCM 可以启动应用并生成通知。

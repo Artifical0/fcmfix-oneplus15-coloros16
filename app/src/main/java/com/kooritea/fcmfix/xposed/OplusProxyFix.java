@@ -1,6 +1,7 @@
 package com.kooritea.fcmfix.xposed;
 
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.WorkSource;
 
@@ -14,6 +15,15 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 public class OplusProxyFix extends XposedModule {
+
+    private static final String OPLUS_APP_STARTUP_MANAGER =
+            "com.android.server.am.OplusAppStartupManager";
+    private static final String OPLUS_STARTUP_STRATEGY =
+            OPLUS_APP_STARTUP_MANAGER + "$OplusStartupStrategy";
+    private static final String OPLUS_HANS_DB_CONFIG =
+            "com.android.server.hans.OplusHansDBConfig";
+    private static final String TYPE_BIND_SERVICE_FROM_GCM = "bsgcm";
+    private static final String START_PROCESS_FROM_GCM_BIND_SERVICE = "system[gcm]";
 
     private static final String[] PROXY_BROADCAST_CLASSES = new String[]{
             "com.android.server.am.OplusProxyBroadcast",
@@ -37,6 +47,10 @@ public class OplusProxyFix extends XposedModule {
         runHook("registerGmsRestrictObserver", this::startHookRegisterGmsRestrictObserver);
         runHook("updateGmsRestrict", this::startHookUpdateGmsRestrict);
         runHook("isGoogleRestricInfoOn", this::startHookIsGoogleRestricInfoOn);
+        runHook("isAppClassifyRestricted", this::startHookAppClassifyRestricted);
+        runHook("isAllowStartFromBindService", this::startHookGcmBindService);
+        runHook("isAllowStartFromStartService", this::startHookFcmStartService);
+        runHook("isSysRestrictionCpn", this::startHookHansGmsRestriction);
     }
 
     private interface HookAction {
@@ -246,9 +260,143 @@ public class OplusProxyFix extends XposedModule {
     }
 
     private void startHookIsGoogleRestricInfoOn() {
-        int hooks = hookAllMethods("com.android.server.am.OplusAppStartupManager$OplusStartupStrategy",
+        int hooks = hookAllMethods(OPLUS_STARTUP_STRATEGY,
                 "isGoogleRestricInfoOn", Boolean.FALSE);
         if (hooks == 0) throw new NoSuchMethodError("isGoogleRestricInfoOn");
+    }
+
+    /**
+     * ColorOS CN keeps per-component classify restriction lists that are skipped on the
+     * international build. This check runs before the normal broadcast/service allow-list
+     * decision, so only bypass it for an actual FCM intent addressed to an enabled target.
+     */
+    private void startHookAppClassifyRestricted() {
+        Class<?> strategyClass = XposedHelpers.findClassIfExists(OPLUS_STARTUP_STRATEGY, classLoader);
+        if (strategyClass == null) throw new NoClassDefFoundError(OPLUS_STARTUP_STRATEGY);
+
+        int hooks = 0;
+        for (Method method : strategyClass.getDeclaredMethods()) {
+            if (!"isAppClassifyRestricted".equals(method.getName())
+                    || !isBooleanType(method.getReturnType())) {
+                continue;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    Intent intent = findIntentArgument(param.args);
+                    if (intent == null || !isFCMIntent(intent)) return;
+
+                    String target = getIntentTarget(intent);
+                    if (target == null) target = findCalleePackage(param.args);
+                    if (target != null && targetIsAllow(target)) {
+                        printLog("Oplus classify restriction bypass: pkg=" + target
+                                + ", action=" + intent.getAction(), true);
+                        param.setResult(false);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus classify hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("isAppClassifyRestricted");
+    }
+
+    /**
+     * On ColorOS 16 the GMS-to-app delivery path is tagged as type "bsgcm" and still
+     * passes through isAllowAutoStartByList even when google_restric_info is disabled.
+     */
+    private void startHookGcmBindService() {
+        Class<?> managerClass = XposedHelpers.findClassIfExists(OPLUS_APP_STARTUP_MANAGER, classLoader);
+        if (managerClass == null) throw new NoClassDefFoundError(OPLUS_APP_STARTUP_MANAGER);
+
+        int hooks = 0;
+        for (Method method : managerClass.getDeclaredMethods()) {
+            if (!"isAllowStartFromBindService".equals(method.getName())
+                    || !isBooleanType(method.getReturnType())) {
+                continue;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (!hasStringArgument(param.args, TYPE_BIND_SERVICE_FROM_GCM)
+                            && !hasStringArgument(param.args, START_PROCESS_FROM_GCM_BIND_SERVICE)) {
+                        return;
+                    }
+                    String target = findCalleePackage(param.args);
+                    if (target != null && targetIsAllow(target)) {
+                        printLog("Oplus GCM bind-service bypass: pkg=" + target, true);
+                        param.setResult(true);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus GCM bind hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("isAllowStartFromBindService");
+    }
+
+    /** Older Firebase delivery variants use startService instead of the GCM bind path. */
+    private void startHookFcmStartService() {
+        Class<?> managerClass = XposedHelpers.findClassIfExists(OPLUS_APP_STARTUP_MANAGER, classLoader);
+        if (managerClass == null) throw new NoClassDefFoundError(OPLUS_APP_STARTUP_MANAGER);
+
+        int hooks = 0;
+        for (Method method : managerClass.getDeclaredMethods()) {
+            if (!"isAllowStartFromStartService".equals(method.getName())
+                    || !isBooleanType(method.getReturnType())) {
+                continue;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    Intent intent = findIntentArgument(param.args);
+                    if (intent == null || !isFCMIntent(intent)) return;
+
+                    String target = findCalleePackage(param.args);
+                    if (target != null && targetIsAllow(target)) {
+                        printLog("Oplus FCM start-service bypass: pkg=" + target
+                                + ", action=" + intent.getAction(), true);
+                        param.setResult(true);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus FCM start hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("isAllowStartFromStartService");
+    }
+
+    /**
+     * The CN ELSA policy gives GMS/GSF/Play a broad Hans prevent mask. Returning the
+     * framework's NOT_PROXY result here is the runtime equivalent of clearing that mask,
+     * without changing the XML or weakening restrictions for unrelated packages.
+     */
+    private void startHookHansGmsRestriction() {
+        Class<?> configClass = XposedHelpers.findClassIfExists(OPLUS_HANS_DB_CONFIG, classLoader);
+        if (configClass == null) throw new NoClassDefFoundError(OPLUS_HANS_DB_CONFIG);
+
+        int hooks = 0;
+        for (Method method : configClass.getDeclaredMethods()) {
+            if (!"isSysRestrictionCpn".equals(method.getName())) continue;
+            Object notProxy = findEnumConstant(method.getReturnType(), "NOT_PROXY");
+            if (notProxy == null) continue;
+
+            final Object finalNotProxy = notProxy;
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args.length == 0 || !(param.args[0] instanceof String)) return;
+                    String packageName = (String) param.args[0];
+                    if (isGoogleCorePackage(packageName)) {
+                        printLog("Oplus Hans GMS restriction bypass: pkg=" + packageName, true);
+                        param.setResult(finalNotProxy);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus Hans restriction hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("isSysRestrictionCpn");
     }
 
     private int hookAllMethods(String className, String methodName, Object result) {
@@ -288,6 +436,55 @@ public class OplusProxyFix extends XposedModule {
             if (arg instanceof String && targetIsAllow((String) arg)) {
                 return (String) arg;
             }
+        }
+        return null;
+    }
+
+    private String findCalleePackage(Object[] args) {
+        Intent intent = findIntentArgument(args);
+        if (intent != null) {
+            String target = getIntentTarget(intent);
+            if (target != null) return target;
+        }
+        for (Object arg : args) {
+            if (arg instanceof ApplicationInfo) {
+                return ((ApplicationInfo) arg).packageName;
+            }
+            if (arg == null) continue;
+            try {
+                Object appInfo = XposedHelpers.getObjectField(arg, "appInfo");
+                if (appInfo instanceof ApplicationInfo) {
+                    return ((ApplicationInfo) appInfo).packageName;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return findAllowedPackageArgument(args);
+    }
+
+    private boolean hasStringArgument(Object[] args, String expected) {
+        for (Object arg : args) {
+            if (expected.equals(arg)) return true;
+        }
+        return false;
+    }
+
+    private boolean isBooleanType(Class<?> type) {
+        return type == boolean.class || type == Boolean.class;
+    }
+
+    private boolean isGoogleCorePackage(String packageName) {
+        return "com.google.android.gms".equals(packageName)
+                || "com.google.android.gsf".equals(packageName)
+                || "com.android.vending".equals(packageName);
+    }
+
+    private Object findEnumConstant(Class<?> type, String wantedName) {
+        if (!type.isEnum()) return null;
+        Object[] constants = type.getEnumConstants();
+        if (constants == null) return null;
+        for (Object constant : constants) {
+            if (wantedName.equals(((Enum<?>) constant).name())) return constant;
         }
         return null;
     }
