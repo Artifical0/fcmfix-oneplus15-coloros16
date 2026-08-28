@@ -26,6 +26,7 @@
 
 已在一加 15 ColorOS `16.0.10.500` 上完成实机回归：
 
+- `coloros_gms_extreme_fix` 根模块保持禁用，未挂载 ELSA 修改，仅启用本 APK；
 - GMS、GSF、Play 商店和 ConfigUpdater 的联网策略均为 `POLICY_NONE`；
 - Nekogram `tw.nekomimi.nekogram` 被强制停止后处于 `stopped=true` 且无进程；
 - 收到 `com.google.android.c2dm.intent.RECEIVE` 后，系统成功启动 Nekogram、清除 stopped

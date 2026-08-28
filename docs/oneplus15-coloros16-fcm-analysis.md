@@ -96,15 +96,18 @@ PR #262 的方向包含 Doze 修复，但其实现会清空 ColorOS 已合并的
 
 - 禁用引起 Zygote/SystemUI FreeType 崩溃的第三方 Font Loader 与配套字体模块后，
   system_server 和 LSPosed 注入保持稳定；该崩溃与 FCMFix 无关。
+- `coloros_gms_extreme_fix` 根模块保持禁用，`sys_elsa_config_list.xml` 没有 bind mount，
+  仅启用本适配 APK；GMS 的 5228 FCM 长连接保持 `ESTABLISHED`。
 - `com.oplus.battery` 启动后，GMS、GSF、Play 商店及 ConfigUpdater 的
   `networking_control` UID policy 均为 `0`（`POLICY_NONE`）；修复前 GMS、
   Play 或 ConfigUpdater 曾被写入 `4`（`POLICY_REJECT_ALL`）。
 - 对 Nekogram 执行 `am force-stop tw.nekomimi.nekogram` 后，包状态为
   `stopped=true` 且进程不存在。
-- 测试消息到达时，system_server 收到由 GMS UID 发出的
+- 测试消息到达时（11:49:12.047），system_server 收到由 GMS UID 发出的
   `com.google.android.c2dm.intent.RECEIVE`，FCMFix 的 BroadcastFix、
   OplusProxyFix 和 AutoStartFix Hook 均出现在调用栈中。
-- Nekogram 随后被启动，包状态变为 `stopped=false`，并成功发布消息通知。
+- Nekogram 随后以 PID 29890 被启动，包状态变为 `stopped=false`，并在约 0.57 秒后
+  成功发布消息通知。
 
 因此在该固件与当前 LSPosed 环境中，应用级修复已覆盖国行 ColorOS 的 Google
 联网策略和已停止应用 FCM 唤醒链路。OTA 后仍应重复上述回归。
