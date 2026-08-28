@@ -24,8 +24,12 @@
   在 LSPosed 中只启用一个版本，作用域选择 `系统框架` 和 `电池`（包名
   `com.oplus.battery`）。
 
-已在一加 15 ColorOS `16.0.10.500` 上验证：Nekogram
-`tw.nekomimi.nekogram` 处于 `stopped=true` 且无进程时，FCM 可以启动应用并生成通知。
+已在一加 15 ColorOS `16.0.10.500` 上完成实机回归：
+
+- GMS、GSF、Play 商店和 ConfigUpdater 的联网策略均为 `POLICY_NONE`；
+- Nekogram `tw.nekomimi.nekogram` 被强制停止后处于 `stopped=true` 且无进程；
+- 收到 `com.google.android.c2dm.intent.RECEIVE` 后，系统成功启动 Nekogram、清除 stopped
+  状态并生成通知。
 
 ### 附加功能
 
