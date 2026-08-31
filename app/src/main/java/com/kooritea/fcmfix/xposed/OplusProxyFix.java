@@ -29,6 +29,8 @@ public class OplusProxyFix extends XposedModule {
             "com.android.server.nwpower.OAppNetControlService";
     private static final String OPLUS_HANS_SCENE_MANAGER =
             "com.android.server.hans.scene.HansSceneManager";
+    private static final String OPLUS_HANS_CGROUP =
+            "com.android.server.hans.freeze.HansCGroup";
     private static final String TYPE_BIND_SERVICE_FROM_GCM = "bsgcm";
     private static final String START_PROCESS_FROM_GCM_BIND_SERVICE = "system[gcm]";
     private static final long FCM_DELIVERY_WINDOW_MS = 20_000L;
@@ -73,6 +75,7 @@ public class OplusProxyFix extends XposedModule {
         runHook("isSysRestrictionCpn", this::startHookHansGmsRestriction);
         runHook("OAppNetControlService", this::startHookOAppNetControlService);
         runHook("HansSceneManager FCM window", this::startHookHansFcmWindow);
+        runHook("HansCGroup FCM window", this::startHookHansCGroupFcmWindow);
     }
 
     private interface HookAction {
@@ -312,12 +315,16 @@ public class OplusProxyFix extends XposedModule {
             String name = method.getName();
             if (!"freeze".equals(name)
                     && !"freezeDirectlyForSceneCombo".equals(name)
-                    && !"freezeAndTransState".equals(name)) {
+                    && !"freezeAndTransState".equals(name)
+                    && !"freezeViaSM".equals(name)) {
                 continue;
             }
             if (method.getParameterTypes().length == 0) continue;
-            Object important = findEnumConstant(method.getReturnType(), "IMPORTANT");
-            if (important == null) continue;
+            boolean stateMachineOnly = "freezeViaSM".equals(name)
+                    && method.getReturnType() == void.class;
+            Object important = stateMachineOnly
+                    ? null : findEnumConstant(method.getReturnType(), "IMPORTANT");
+            if (!stateMachineOnly && important == null) continue;
 
             final Object noFreezeResult = important;
             XposedBridge.hookMethod(method, new XC_MethodHook() {
@@ -337,6 +344,57 @@ public class OplusProxyFix extends XposedModule {
             printLog("Oplus Hans FCM-window hook active: " + describeMethod(method));
         }
         if (hooks == 0) throw new NoSuchMethodError("HansSceneManager freeze methods");
+    }
+
+    /**
+     * The lock-screen Fast Freezer can bypass HansSceneManager's regular freeze methods on
+     * cgroup v2 devices. Intercept both the package freeze and the direct UID fast-freeze
+     * entry so an in-flight push cannot be suspended through that path either.
+     */
+    private void startHookHansCGroupFcmWindow() {
+        Class<?> cgroupClass = XposedHelpers.findClassIfExists(OPLUS_HANS_CGROUP, classLoader);
+        if (cgroupClass == null) throw new NoClassDefFoundError(OPLUS_HANS_CGROUP);
+
+        int hooks = 0;
+        for (Method method : cgroupClass.getDeclaredMethods()) {
+            if ("hansFreezeLocked".equals(method.getName())
+                    && isBooleanType(method.getReturnType())
+                    && method.getParameterTypes().length > 0
+                    && !method.getParameterTypes()[0].isPrimitive()) {
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        if (param.args.length == 0 || param.args[0] == null) return;
+                        int uid = getHansPackageUid(param.args[0]);
+                        if (uid >= 0 && isInFcmDeliveryWindow(uid)) {
+                            printLog("Oplus FCM cgroup-freeze bypass: pkg="
+                                    + getFcmDeliveryPackage(uid) + ", uid=" + uid, true);
+                            param.setResult(false);
+                        }
+                    }
+                });
+                hooks++;
+                printLog("Oplus Hans cgroup hook active: " + describeMethod(method));
+            } else if ("FastFreezeEnter".equals(method.getName())
+                    && method.getReturnType() == void.class
+                    && method.getParameterTypes().length == 1
+                    && method.getParameterTypes()[0] == int.class) {
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        int uid = (Integer) param.args[0];
+                        if (isInFcmDeliveryWindow(uid)) {
+                            printLog("Oplus FCM fast-freeze bypass: pkg="
+                                    + getFcmDeliveryPackage(uid) + ", uid=" + uid, true);
+                            param.setResult(null);
+                        }
+                    }
+                });
+                hooks++;
+                printLog("Oplus Hans fast-freezer hook active: " + describeMethod(method));
+            }
+        }
+        if (hooks == 0) throw new NoSuchMethodError("HansCGroup freeze methods");
     }
 
     private int getHansPackageUid(Object hansPackage) {
