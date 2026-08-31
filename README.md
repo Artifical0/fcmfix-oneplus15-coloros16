@@ -154,6 +154,7 @@ package stopped 状态下的 FCM 投递。
 
 - [下载已验证版本 53-oneplus15-cos16-3](https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/tag/53-oneplus15-cos16-3)
 - [一加 15 ColorOS 16 国行/国际版差分与 Hook 分析](docs/oneplus15-coloros16-fcm-analysis.md)
+- [酷安、公众号与技术论坛发布素材](docs/publishing-kit.md)
 - 上游项目：[kooritea/fcmfix](https://github.com/kooritea/fcmfix)
 
 APK SHA-256：
