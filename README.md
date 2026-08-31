@@ -20,6 +20,8 @@ FCM。它的作用是在 Google Play 服务已经收到消息后，修复消息�
 - ColorOS 电池组件可能把 GMS、Play 商店等 Google 核心包设置为禁止全部联网；
 - GMS 发出 FCM 广播时，系统可能拒绝启动没有进程或处于 stopped 状态的应用；
 - 国行版的应用分类、自启动、GCM bind、Hans 冻结和代理唤醒策略可能继续拦截；
+- 即使 FCM 已经拉起目标应用，后台网络控制仍可能在数秒后重新冻结应用并关闭其
+  socket，使应用不能及时拉取消息正文；
 - 国行区域配置缺少国际版中的部分 GMS Doze 白名单条目。
 
 典型表现包括：
@@ -28,6 +30,7 @@ FCM。它的作用是在 Google Play 服务已经收到消息后，修复消息�
 - 日志出现 `Failed to broadcast to stopped app`；
 - 必须手动打开应用，积压的消息才一起出现；
 - GMS 已连接 FCM，但消息无法拉起目标应用。
+- FCM Diagnostics 显示广播成功、进程也已启动，但通知延迟到亮屏或打开应用后才出现。
 
 本模块就是针对这些系统限制进行修复。
 
@@ -40,6 +43,8 @@ FCM。它的作用是在 Google Play 服务已经收到消息后，修复消息�
 - 仅对模块允许列表中的目标应用绕过 ColorOS 应用分类、FCM 自启动、GCM bind 和
   service 启动限制；
 - 在 FCM 到达时解除必要的 ColorOS/Hans 冻结和代理限制；
+- 每次有效 FCM 到达后，仅为对应目标 UID 建立 20 秒投递窗口，暂时阻止 Hans 重新冻结
+  以及 `OAppNetControlService` 关闭 socket；窗口结束后恢复系统原有省电策略；
 - 为 GMS、GSF 和 Play 商店补充缺失的 Doze 条目，同时保留 ColorOS 原有白名单；
 - 可选阻止系统在应用停止时自动删除它原有的通知。
 
@@ -91,6 +96,10 @@ ColorOS 的 `com.oplus.battery` 会在 Google 连通性探测失败时调用系�
 允许列表用于限制放行范围。不要无条件全选所有应用；只选择确实使用 FCM 且需要后台
 推送的应用即可。修改允许列表通常会即时更新，异常时重启一次手机。
 
+目标应用不需要为了本模块额外挂入系统“流量管理”白名单。模块只在一次 FCM 投递后的
+短窗口内处理 ColorOS 自动触发的后台断网，不会永久放开应用后台联网；用户主动设置的
+Wi-Fi、移动数据权限仍按系统设置执行。
+
 测试版使用独立包名 `com.kooritea.fcmfix.op15`，可以和官方 FCMFix 同时安装，但
 **不要在 LSPosed 中同时启用两个版本**，否则 Hook 可能重复执行。
 
@@ -141,6 +150,11 @@ package stopped 状态下的 FCM 投递。
 7. LSPosed 日志中是否存在 `hook error`；
 8. 当前系统版本是否已经通过 OTA 更新。
 
+如果日志已经显示 `Successful broadcast`，应用进程也被拉起，但通知仍延迟，检查新版
+日志中是否出现 `Oplus FCM delivery window`、`Oplus FCM Hans-freeze bypass` 或
+`Oplus FCM socket-close bypass`。这属于 ColorOS 在广播投递后的二次冻结/断网问题，
+不是 GMS 长连接断开。
+
 刚重启后 GMS 重新建立连接可能需要一点时间，测试时应先确认 FCM Diagnostics 已连接。
 
 ## 权限与隐私
@@ -152,13 +166,9 @@ package stopped 状态下的 FCM 投递。
 
 ## 下载与技术分析
 
-- [下载已验证版本 53-oneplus15-cos16-3](https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/tag/53-oneplus15-cos16-3)
+- [下载最新版本](https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/latest)
 - [一加 15 ColorOS 16 国行/国际版差分与 Hook 分析](docs/oneplus15-coloros16-fcm-analysis.md)
 - [酷安、公众号与技术论坛发布素材](docs/publishing-kit.md)
 - 上游项目：[kooritea/fcmfix](https://github.com/kooritea/fcmfix)
 
-APK SHA-256：
-
-```text
-6E163FFD4B2D29AA3593B0B5D661FA1C8F96AB451397BFD05B970EF23B00FBD3
-```
+每个版本的 APK SHA-256 见对应 GitHub Release 说明。

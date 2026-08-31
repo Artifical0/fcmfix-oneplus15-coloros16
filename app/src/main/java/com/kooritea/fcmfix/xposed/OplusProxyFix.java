@@ -3,7 +3,9 @@ package com.kooritea.fcmfix.xposed;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.os.SystemClock;
 import android.os.WorkSource;
+import android.util.Pair;
 
 import com.kooritea.fcmfix.libxposed.XC_MethodHook;
 import com.kooritea.fcmfix.libxposed.XposedBridge;
@@ -13,6 +15,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class OplusProxyFix extends XposedModule {
 
@@ -22,8 +25,25 @@ public class OplusProxyFix extends XposedModule {
             OPLUS_APP_STARTUP_MANAGER + "$OplusStartupStrategy";
     private static final String OPLUS_HANS_DB_CONFIG =
             "com.android.server.hans.OplusHansDBConfig";
+    private static final String OPLUS_APP_NET_CONTROL_SERVICE =
+            "com.android.server.nwpower.OAppNetControlService";
+    private static final String OPLUS_HANS_SCENE_MANAGER =
+            "com.android.server.hans.scene.HansSceneManager";
     private static final String TYPE_BIND_SERVICE_FROM_GCM = "bsgcm";
     private static final String START_PROCESS_FROM_GCM_BIND_SERVICE = "system[gcm]";
+    private static final long FCM_DELIVERY_WINDOW_MS = 20_000L;
+
+    /**
+     * ColorOS can unfreeze an FCM target, deliver the broadcast and freeze it again about
+     * three seconds later. OAppNetControlService then destroys the target UID's sockets,
+     * so applications such as WeChat may not finish fetching the actual message. Keep only
+     * the UID involved in the current FCM delivery unfrozen and online for the same kind of
+     * short execution window Android grants to high-priority push work.
+     */
+    private static final ConcurrentHashMap<Integer, Long> sFcmDeliveryWindows =
+            new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, String> sFcmDeliveryPackages =
+            new ConcurrentHashMap<>();
 
     private static final String[] PROXY_BROADCAST_CLASSES = new String[]{
             "com.android.server.am.OplusProxyBroadcast",
@@ -51,6 +71,8 @@ public class OplusProxyFix extends XposedModule {
         runHook("isAllowStartFromBindService", this::startHookGcmBindService);
         runHook("isAllowStartFromStartService", this::startHookFcmStartService);
         runHook("isSysRestrictionCpn", this::startHookHansGmsRestriction);
+        runHook("OAppNetControlService", this::startHookOAppNetControlService);
+        runHook("HansSceneManager FCM window", this::startHookHansFcmWindow);
     }
 
     private interface HookAction {
@@ -215,6 +237,114 @@ public class OplusProxyFix extends XposedModule {
         } catch (Throwable e) {
             printLog("Oplus unfreeze invocation failed: " + e.getClass().getSimpleName()
                     + ": " + e.getMessage(), true);
+        }
+    }
+
+    public static void beginFcmDeliveryWindow(String target) {
+        int uid = getTargetUidFromPackageName(target);
+        if (uid < 0) return;
+
+        long expiresAt = SystemClock.elapsedRealtime() + FCM_DELIVERY_WINDOW_MS;
+        sFcmDeliveryWindows.merge(uid, expiresAt, Math::max);
+        sFcmDeliveryPackages.put(uid, target);
+        printLog("Oplus FCM delivery window: pkg=" + target + ", uid=" + uid
+                + ", duration=" + FCM_DELIVERY_WINDOW_MS + "ms", true);
+    }
+
+    private static boolean isInFcmDeliveryWindow(int uid) {
+        Long expiresAt = sFcmDeliveryWindows.get(uid);
+        if (expiresAt == null) return false;
+        if (SystemClock.elapsedRealtime() < expiresAt) return true;
+
+        sFcmDeliveryWindows.remove(uid, expiresAt);
+        sFcmDeliveryPackages.remove(uid);
+        return false;
+    }
+
+    private static String getFcmDeliveryPackage(int uid) {
+        String packageName = sFcmDeliveryPackages.get(uid);
+        return packageName == null ? "uid:" + uid : packageName;
+    }
+
+    /** Prevent ColorOS background-network control from closing the target socket mid-push. */
+    private void startHookOAppNetControlService() {
+        Class<?> serviceClass = XposedHelpers.findClassIfExists(
+                OPLUS_APP_NET_CONTROL_SERVICE, classLoader);
+        if (serviceClass == null) throw new NoClassDefFoundError(OPLUS_APP_NET_CONTROL_SERVICE);
+
+        int hooks = 0;
+        for (Method method : serviceClass.getDeclaredMethods()) {
+            if (!"hansUpdateFirewallList".equals(method.getName())) continue;
+            Class<?>[] types = method.getParameterTypes();
+            if (types.length == 0 || !Pair.class.isAssignableFrom(types[0])) continue;
+
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args.length == 0 || !(param.args[0] instanceof Pair)) return;
+                    Pair<?, ?> update = (Pair<?, ?>) param.args[0];
+                    if (!(update.first instanceof Integer) || !(update.second instanceof Boolean)) {
+                        return;
+                    }
+                    int uid = (Integer) update.first;
+                    boolean networkRestore = (Boolean) update.second;
+                    if (!networkRestore && isInFcmDeliveryWindow(uid)) {
+                        // true is the restore/remove-from-firewall branch in ColorOS 16.
+                        param.args[0] = Pair.create(uid, true);
+                        printLog("Oplus FCM socket-close bypass: pkg="
+                                + getFcmDeliveryPackage(uid) + ", uid=" + uid, true);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus app network-control hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("hansUpdateFirewallList");
+    }
+
+    /** Keep Hans from refreezing the just-woken target while it handles the push. */
+    private void startHookHansFcmWindow() {
+        Class<?> sceneClass = XposedHelpers.findClassIfExists(OPLUS_HANS_SCENE_MANAGER, classLoader);
+        if (sceneClass == null) throw new NoClassDefFoundError(OPLUS_HANS_SCENE_MANAGER);
+
+        int hooks = 0;
+        for (Method method : sceneClass.getDeclaredMethods()) {
+            String name = method.getName();
+            if (!"freeze".equals(name)
+                    && !"freezeDirectlyForSceneCombo".equals(name)
+                    && !"freezeAndTransState".equals(name)) {
+                continue;
+            }
+            if (method.getParameterTypes().length == 0) continue;
+            Object important = findEnumConstant(method.getReturnType(), "IMPORTANT");
+            if (important == null) continue;
+
+            final Object noFreezeResult = important;
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (param.args.length == 0 || param.args[0] == null) return;
+                    int uid = getHansPackageUid(param.args[0]);
+                    if (uid >= 0 && isInFcmDeliveryWindow(uid)) {
+                        printLog("Oplus FCM Hans-freeze bypass: pkg="
+                                + getFcmDeliveryPackage(uid) + ", uid=" + uid
+                                + ", method=" + method.getName(), true);
+                        param.setResult(noFreezeResult);
+                    }
+                }
+            });
+            hooks++;
+            printLog("Oplus Hans FCM-window hook active: " + describeMethod(method));
+        }
+        if (hooks == 0) throw new NoSuchMethodError("HansSceneManager freeze methods");
+    }
+
+    private int getHansPackageUid(Object hansPackage) {
+        try {
+            Object uid = XposedHelpers.callMethod(hansPackage, "getUid");
+            return uid instanceof Integer ? (Integer) uid : -1;
+        } catch (Throwable ignored) {
+            return -1;
         }
     }
 

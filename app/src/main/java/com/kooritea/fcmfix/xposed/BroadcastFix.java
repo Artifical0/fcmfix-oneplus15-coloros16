@@ -224,6 +224,7 @@ public class BroadcastFix extends XposedModule {
                                 + ", allowed=" + targetAllowed, true);
                     }
                     if(targetAllowed){
+                        OplusProxyFix.beginFcmDeliveryWindow(target);
                         if (finalAppOp_args_index >= 0 && finalAppOp_args_index < methodHookParam.args.length) {
                             int i = (Integer) methodHookParam.args[finalAppOp_args_index];
                             if (i == -1) {

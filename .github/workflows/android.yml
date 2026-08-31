@@ -4,6 +4,9 @@ on:
   push:
     branches: [ "master" ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,14 +24,11 @@ jobs:
       run: chmod +x gradlew
       
     - name: Retrieve version name
-      run: echo VERSION_NAME=$(date "+%Y%m%d")_$(echo ${{ github.event.head_commit.id }} | head -c 7) >> $GITHUB_ENV
+      run: echo VERSION_NAME=$(grep "versionName" app/build.gradle | sed -E 's/.*versionName "([^"]+)".*/\1/') >> $GITHUB_ENV
 
     - name: Retrieve version code
       run: echo VERSION_CODE=$(cat ${{ github.workspace }}/app/build.gradle | grep "versionCode" | grep -Eo "[0-9]+") >> $GITHUB_ENV
 
-    - name: Set version name
-      run: sed -i "s/versionName \".*\"/versionName \"${{ env.VERSION_NAME }}\"/" ${{ github.workspace }}/app/build.gradle
-      
     - name: Build with Gradle
       run: ./gradlew assembleRelease
 
@@ -50,38 +50,24 @@ jobs:
       env:
         BUILD_TOOLS_VERSION: ${{ env.BUILD_TOOL_VERSION }}
 
-    - name: Renamae
-      run: mv ${{ github.workspace }}/app/build/outputs/apk/release/app-release-unsigned-signed.apk ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-ci-${{ env.VERSION_NAME }}.apk
+    - name: Rename APK
+      run: mv ${{ github.workspace }}/app/build/outputs/apk/release/app-release-unsigned-signed.apk ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
     
     - name: Upload built apk
       uses: actions/upload-artifact@v4
       with:
         name: release
-        path: ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-ci-${{ env.VERSION_NAME }}.apk
+        path: ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
 
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
-        name: "Auto Release ${{ env.VERSION_NAME }}"
-        tag_name: ${{ env.VERSION_CODE }}-${{ env.VERSION_NAME }}
-        token: "${{ secrets.TOKEN }}"
-        files: |
-          ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-ci-${{ env.VERSION_NAME }}.apk
-    
-    - uses: dorny/paths-filter@v3
-      id: changes
-      with:
-        filters: |
-          src:
-            - 'app/build.gradle'
+        name: "FCMFix OnePlus 15 ColorOS 16 (${{ env.VERSION_NAME }})"
+        tag_name: ${{ env.VERSION_NAME }}
+        token: "${{ github.token }}"
+        body: |
+          本版本由仓库 CI 使用专用发布证书构建并签名。
 
-    - name: Release lsposed module repository
-      if: steps.changes.outputs.src == 'true'
-      uses: softprops/action-gh-release@v2
-      with:
-        name: "Auto Release ${{ env.VERSION_NAME }}"
-        tag_name: ${{ env.VERSION_CODE }}-${{ env.VERSION_NAME }}
-        repository: Xposed-Modules-Repo/com.kooritea.fcmfix
-        token: "${{ secrets.TOKEN_CLASSIC }}"
+          详细变更、适用范围和安装方法见 README；首次从旧调试签名版本迁移时需要卸载旧版。
         files: |
-          ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-ci-${{ env.VERSION_NAME }}.apk
+          ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
