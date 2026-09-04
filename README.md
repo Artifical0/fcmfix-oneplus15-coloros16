@@ -100,8 +100,9 @@ ColorOS 的 `com.oplus.battery` 会在 Google 连通性探测失败时调用系�
 短窗口内处理 ColorOS 自动触发的后台断网，不会永久放开应用后台联网；用户主动设置的
 Wi-Fi、移动数据权限仍按系统设置执行。
 
-当前版本使用独立包名 `com.fcmfix.coloros`。包名变更后不能直接覆盖
-`com.kooritea.fcmfix.op15` 旧版；请先在 LSPosed 中停用并卸载旧版，安装新版后
+当前版本使用 LSPosed 官方仓库可验证包名 `io.github.artifical0.fcmfix.coloros`。
+包名变更后不能直接覆盖 `com.fcmfix.coloros` 或 `com.kooritea.fcmfix.op15` 旧版；
+请先在 LSPosed 中停用并卸载旧版，安装新版后
 重新勾选作用域、重启手机，并重新选择允许推送的应用。
 
 新旧版可以同时安装，但 **不要在 LSPosed 中同时启用两个版本**，否则 Hook

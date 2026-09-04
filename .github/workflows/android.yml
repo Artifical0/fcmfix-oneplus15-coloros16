@@ -68,7 +68,7 @@ jobs:
         body: |
           本版本由仓库 CI 使用专用发布证书构建并签名。
 
-          本版本已将应用名更新为 FCMFix ColorOS，安装包名更新为 com.fcmfix.coloros。
+          本版本将最终安装包名更新为 io.github.artifical0.fcmfix.coloros，以符合 LSPosed 官方仓库的包名归属验证要求。
 
           由于包名已更改，不能直接覆盖旧版；请先在 LSPosed 中停用并卸载旧版，安装后重新勾选作用域和允许推送的应用。
 

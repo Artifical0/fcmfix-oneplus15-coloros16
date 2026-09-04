@@ -5,11 +5,11 @@ android {
     compileSdkVersion 36
 
     defaultConfig {
-        applicationId "com.fcmfix.coloros"
+        applicationId "io.github.artifical0.fcmfix.coloros"
         minSdkVersion 29
         targetSdkVersion 34
-        versionCode 59
-        versionName "53-coloros-7"
+        versionCode 60
+        versionName "53-coloros-8"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

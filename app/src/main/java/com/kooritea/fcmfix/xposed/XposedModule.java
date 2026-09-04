@@ -29,7 +29,7 @@ import java.util.Set;
 import static android.content.Context.NOTIFICATION_SERVICE;
 
 public abstract class XposedModule {
-    protected static final String MODULE_PACKAGE_NAME = "com.fcmfix.coloros";
+    protected static final String MODULE_PACKAGE_NAME = "io.github.artifical0.fcmfix.coloros";
     protected static final String ACTION_LOG = MODULE_PACKAGE_NAME + ".log";
     protected static final String ACTION_UPDATE_CONFIG = MODULE_PACKAGE_NAME + ".update.config";
     private static String selfPackageName = "UNKNOWN";

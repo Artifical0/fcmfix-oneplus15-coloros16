@@ -6,6 +6,7 @@
 ## 项目信息
 
 - 项目名称：FCMFix ColorOS
+- 安装包名：`io.github.artifical0.fcmfix.coloros`
 - 适用设备：一加 15 国行版（PLK110）
 - 已验证系统：ColorOS `16.0.10.500` / Android 16
 - 运行条件：Root、LSPosed、已安装并能联网的 Google Play 服务
