@@ -1,4 +1,4 @@
-# FCMFix for OnePlus 15 / ColorOS 16
+# FCMFix ColorOS
 
 这是一个需要 **Root + LSPosed** 的系统级修复模块，主要用于解决一加 15 国行版
 ColorOS 16 阻止 Google FCM 唤醒后台、无进程或已停止应用的问题。
@@ -100,8 +100,12 @@ ColorOS 的 `com.oplus.battery` 会在 Google 连通性探测失败时调用系�
 短窗口内处理 ColorOS 自动触发的后台断网，不会永久放开应用后台联网；用户主动设置的
 Wi-Fi、移动数据权限仍按系统设置执行。
 
-测试版使用独立包名 `com.kooritea.fcmfix.op15`，可以和官方 FCMFix 同时安装，但
-**不要在 LSPosed 中同时启用两个版本**，否则 Hook 可能重复执行。
+当前版本使用独立包名 `com.fcmfix.coloros`。包名变更后不能直接覆盖
+`com.kooritea.fcmfix.op15` 旧版；请先在 LSPosed 中停用并卸载旧版，安装新版后
+重新勾选作用域、重启手机，并重新选择允许推送的应用。
+
+新旧版可以同时安装，但 **不要在 LSPosed 中同时启用两个版本**，否则 Hook
+可能重复执行。
 
 ## 是否还需要 GMS Magisk 模块
 

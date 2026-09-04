@@ -51,23 +51,27 @@ jobs:
         BUILD_TOOLS_VERSION: ${{ env.BUILD_TOOL_VERSION }}
 
     - name: Rename APK
-      run: mv ${{ github.workspace }}/app/build/outputs/apk/release/app-release-unsigned-signed.apk ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
+      run: mv ${{ github.workspace }}/app/build/outputs/apk/release/app-release-unsigned-signed.apk ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-coloros-${{ env.VERSION_NAME }}.apk
     
     - name: Upload built apk
       uses: actions/upload-artifact@v4
       with:
         name: release
-        path: ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
+        path: ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-coloros-${{ env.VERSION_NAME }}.apk
 
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
-        name: "FCMFix OnePlus 15 ColorOS 16 (${{ env.VERSION_NAME }})"
+        name: "FCMFix ColorOS (${{ env.VERSION_NAME }})"
         tag_name: ${{ env.VERSION_NAME }}
         token: "${{ github.token }}"
         body: |
           本版本由仓库 CI 使用专用发布证书构建并签名。
 
-          详细变更、适用范围和安装方法见 README；首次从旧调试签名版本迁移时需要卸载旧版。
+          本版本已将应用名更新为 FCMFix ColorOS，安装包名更新为 com.fcmfix.coloros。
+
+          由于包名已更改，不能直接覆盖旧版；请先在 LSPosed 中停用并卸载旧版，安装后重新勾选作用域和允许推送的应用。
+
+          详细变更、适用范围和安装方法见 README。
         files: |
-          ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-oneplus15-coloros16-${{ env.VERSION_NAME }}.apk
+          ${{ github.workspace }}/app/build/outputs/apk/release/fcmfix-coloros-${{ env.VERSION_NAME }}.apk

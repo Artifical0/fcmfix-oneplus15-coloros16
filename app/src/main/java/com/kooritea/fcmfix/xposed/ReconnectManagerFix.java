@@ -78,7 +78,7 @@ public class ReconnectManagerFix extends XposedModule {
                 @Override
                 protected void afterHookedMethod(final MethodHookParam param) throws Throwable {
                     IntentFilter intentFilter = new IntentFilter();
-                    intentFilter.addAction("com.kooritea.fcmfix.log");
+                    intentFilter.addAction(ACTION_LOG);
                     if (Build.VERSION.SDK_INT >= 34) {
                         context.registerReceiver(logBroadcastReceive, intentFilter, Context.RECEIVER_EXPORTED);
                     } else {
@@ -222,7 +222,7 @@ public class ReconnectManagerFix extends XposedModule {
     private final BroadcastReceiver logBroadcastReceive = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if ("com.kooritea.fcmfix.log".equals(action)) {
+            if (ACTION_LOG.equals(action)) {
                 try{
                     XposedHelpers.callStaticMethod(GcmChimeraService,GcmChimeraServiceLogMethodName , new Class<?>[]{String.class, Object[].class}, "[fcmfix] " + intent.getStringExtra("text"), null);
                 }catch (Throwable e){
@@ -317,8 +317,8 @@ public class ReconnectManagerFix extends XposedModule {
                 openFcmFixButton.setOnClickListener(view -> {
                     Intent intent = new Intent(Intent.ACTION_VIEW);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    intent.setPackage("com.kooritea.fcmfix");
-                    intent.setComponent(new ComponentName("com.kooritea.fcmfix","com.kooritea.fcmfix.MainActivity"));
+                    intent.setPackage(MODULE_PACKAGE_NAME);
+                    intent.setComponent(new ComponentName(MODULE_PACKAGE_NAME,"com.kooritea.fcmfix.MainActivity"));
                     context.startActivity(intent);
                 });
                 linearLayout2.addView(openFcmFixButton);

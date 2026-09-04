@@ -223,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
             _allowList.addAll(_notAllowList);
             _allowList.addAll(_notFoundFcm);
             this.mAppList = _allowList;
-            if(_allowList.size() == 0 || _allowList.isEmpty() ||(_allowList.size() == 1 && "com.kooritea.fcmfix".equals(_allowList.get(0).packageName))){
+            if(_allowList.size() == 0 || _allowList.isEmpty() ||(_allowList.size() == 1 && getPackageName().equals(_allowList.get(0).packageName))){
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("请在系统设置中授予读取应用列表权限")
                         .setMessage("或直接编辑" + getApplicationContext().getFilesDir().getAbsolutePath() + "/config.json(需重启生效)")
@@ -358,7 +358,7 @@ public class MainActivity extends AppCompatActivity {
             if (!saved) {
                 throw new IllegalStateException("配置写入失败");
             }
-            this.sendBroadcast(new Intent("com.kooritea.fcmfix.update.config"));
+            this.sendBroadcast(new Intent(getPackageName() + ".update.config"));
             return true;
         } catch (Throwable e) {
             Log.e("updateConfig",e.toString());
@@ -396,7 +396,7 @@ public class MainActivity extends AppCompatActivity {
             }
             if("隐藏启动器图标".equals(item.getTitle())){
                 PackageManager packageManager = getPackageManager();
-                item.setChecked(packageManager.getComponentEnabledSetting(new ComponentName("com.kooritea.fcmfix", "com.kooritea.fcmfix.Home")) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
+                item.setChecked(packageManager.getComponentEnabledSetting(new ComponentName(getPackageName(), "com.kooritea.fcmfix.Home")) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
             }
             if("阻止应用停止时自动清除通知".equals(item.getTitle())){
                 try {
@@ -456,7 +456,7 @@ public class MainActivity extends AppCompatActivity {
         if(menuItem.getTitle().equals("隐藏启动器图标")){
             PackageManager packageManager = getPackageManager();
             packageManager.setComponentEnabledSetting(
-                    new ComponentName("com.kooritea.fcmfix", "com.kooritea.fcmfix.Home"),
+                    new ComponentName(getPackageName(), "com.kooritea.fcmfix.Home"),
                     menuItem.isChecked() ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     PackageManager.DONT_KILL_APP
             );

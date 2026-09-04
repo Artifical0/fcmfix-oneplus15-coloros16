@@ -5,11 +5,11 @@ android {
     compileSdkVersion 36
 
     defaultConfig {
-        applicationId "com.kooritea.fcmfix.op15"
+        applicationId "com.fcmfix.coloros"
         minSdkVersion 29
         targetSdkVersion 34
-        versionCode 58
-        versionName "53-oneplus15-cos16-6"
+        versionCode 59
+        versionName "53-coloros-7"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

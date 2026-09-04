@@ -1,18 +1,17 @@
-# FCMFix 一加 15 / ColorOS 16 发布素材
+# FCMFix ColorOS 发布素材
 
 本文档提供可直接复制到酷安、微信公众号和技术论坛的发布文案。发布前可按平台删减
 技术细节，但不建议删除适用版本、Root 风险和 OTA 兼容性提示。
 
 ## 项目信息
 
-- 项目名称：FCMFix for OnePlus 15 / ColorOS 16
+- 项目名称：FCMFix ColorOS
 - 适用设备：一加 15 国行版（PLK110）
 - 已验证系统：ColorOS `16.0.10.500` / Android 16
 - 运行条件：Root、LSPosed、已安装并能联网的 Google Play 服务
 - GitHub：<https://github.com/Artifical0/fcmfix-oneplus15-coloros16>
-- Release：<https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/tag/53-oneplus15-cos16-3>
-- APK 直链：<https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/download/53-oneplus15-cos16-3/fcmfix-oneplus15-coloros16-cos16-3.apk>
-- APK SHA-256：`6E163FFD4B2D29AA3593B0B5D661FA1C8F96AB451397BFD05B970EF23B00FBD3`
+- 最新版本：<https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/latest>
+- APK SHA-256：见对应 GitHub Release 说明
 - 上游项目：<https://github.com/kooritea/fcmfix>
 
 ## 推荐标题
@@ -46,7 +45,7 @@ Google 核心服务联网。
 ## 酷安发布稿
 
 ```text
-项目：FCMFix for OnePlus 15 / ColorOS 16
+项目：FCMFix ColorOS
 
 一加 15 国行版的 Google Play 服务可以建立 FCM 长连接，但部分应用在划掉后台、被系统
 清理，甚至进入 stopped 状态后，GMS 发出的推送广播可能被 ColorOS 拦截。常见现象是：
@@ -103,10 +102,9 @@ GitHub：
 https://github.com/Artifical0/fcmfix-oneplus15-coloros16
 
 下载：
-https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/tag/53-oneplus15-cos16-3
+https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/latest
 
-SHA-256：
-6E163FFD4B2D29AA3593B0B5D661FA1C8F96AB451397BFD05B970EF23B00FBD3
+SHA-256：见对应 GitHub Release 说明
 
 欢迎同系统用户反馈测试结果。反馈时请提供设备型号、完整系统版本、LSPosed 版本、目标
 应用包名，以及失败发生在普通划卡还是 am force-stop 场景。
@@ -168,7 +166,7 @@ LSPosed 作用域只需要勾选“系统框架”和“电池 com.oplus.battery
 https://github.com/Artifical0/fcmfix-oneplus15-coloros16
 
 已验证版本下载：
-https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/tag/53-oneplus15-cos16-3
+https://github.com/Artifical0/fcmfix-oneplus15-coloros16/releases/latest
 ```
 
 ## 技术论坛发布稿
