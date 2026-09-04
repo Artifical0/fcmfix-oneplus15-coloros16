@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#6200EE</color>
-    <color name="colorPrimaryDark">#3700B3</color>
-    <color name="colorAccent">#03DAC5</color>
+    <color name="colorPrimary">#4338CA</color>
+    <color name="colorPrimaryDark">#1E1B4B</color>
+    <color name="colorAccent">#06B6D4</color>
+    <color name="screenBackground">#F5F7FB</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="textPrimary">#172033</color>
+    <color name="textSecondary">#64748B</color>
+    <color name="fcmBadgeBackground">#E0F2FE</color>
+    <color name="fcmBadgeText">#0369A1</color>
 </resources>

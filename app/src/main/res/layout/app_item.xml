@@ -3,77 +3,98 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginEnd="12dp"
+    android:layout_marginBottom="4dp"
+    android:background="@drawable/bg_app_item"
+    android:elevation="1dp"
+    android:gravity="center_vertical"
+    android:minHeight="76dp"
     android:orientation="horizontal"
-    android:padding="10dp"
-    android:paddingStart="10dp"
-    android:paddingLeft="10dp"
+    android:paddingStart="14dp"
     android:paddingTop="10dp"
     android:paddingEnd="10dp"
-    android:paddingRight="10dp"
-    android:paddingBottom="10dp" >
+    android:paddingBottom="10dp">
 
     <LinearLayout
-        android:layout_width="263dp"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:gravity="center"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingRight="10dp">
+        android:paddingStart="0dp"
+        android:paddingEnd="8dp">
 
         <ImageView
             android:id="@+id/icon"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
-            android:paddingRight="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@null"
             tools:src="@tools:sample/avatars" />
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
             android:orientation="vertical">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical">
 
                 <TextView
                     android:id="@+id/name"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:textSize="18sp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/textPrimary"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
                     tools:text="fcmfix" />
 
                 <TextView
                     android:id="@+id/includeFcm"
-                    android:layout_marginStart="5dp"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray"
-                    android:text="包含 FCM" />
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_fcm_badge"
+                    android:paddingStart="7dp"
+                    android:paddingTop="2dp"
+                    android:paddingEnd="7dp"
+                    android:paddingBottom="2dp"
+                    android:text="@string/contains_fcm"
+                    android:textColor="@color/fcmBadgeText"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/packageName"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <TextView
-                    android:id="@+id/packageName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textSize="14sp"
-                    tools:text="com.kooritea.fcmfix"/>
-            </LinearLayout>
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="middle"
+                android:maxLines="1"
+                android:textColor="@color/textSecondary"
+                android:textSize="13sp"
+                tools:text="com.kooritea.fcmfix" />
         </LinearLayout>
     </LinearLayout>
+
     <CheckBox
         android:id="@+id/isAllow"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
-        android:gravity="center"
-        android:focusable="false"
+        android:buttonTint="@color/colorAccent"
         android:clickable="false"
+        android:focusable="false"
         android:focusableInTouchMode="false"
+        android:gravity="center"
         android:layoutDirection="rtl" />
 
 </LinearLayout>

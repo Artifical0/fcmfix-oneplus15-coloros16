@@ -1,3 +1,7 @@
 <resources>
-    <string name="app_name">FCMFix OP15/COS16 测试版</string>
+    <string name="app_name">FCMFix OP15/COS16</string>
+    <string name="screen_title">后台推送保护</string>
+    <string name="screen_description">勾选需要由 FCM 唤醒的应用</string>
+    <string name="screen_scope">LSPosed 作用域：系统框架 + 电池</string>
+    <string name="contains_fcm">包含 FCM</string>
 </resources>
